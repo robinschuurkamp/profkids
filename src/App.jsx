@@ -312,7 +312,7 @@ const inputStyle = {
 };
 
 // ─── PROFILE SETUP PAGE ───────────────────────────────────────────────
-function ProfileSetup({ userId, onDone }) {
+function ProfileSetup({ userId, onDone, onCancel, isEditing }) {
   const [name, setName] = useState("");
   const [position, setPosition] = useState("Aanvaller");
   const [age, setAge] = useState("");
@@ -347,7 +347,15 @@ function ProfileSetup({ userId, onDone }) {
     <div style={{ minHeight: "100vh", background: "#f0fdf4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Outfit', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet" />
       <div style={{ background: "white", borderRadius: 24, padding: 36, width: "100%", maxWidth: 440, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", border: "1px solid #d1fae5" }}>
-        <div style={{ fontSize: 28, fontWeight: 900, color: "#15803d", marginBottom: 4 }}>Maak je profiel ⚽</div>
+        {isEditing && onCancel && (
+          <button onClick={onCancel} style={{
+            background: "none", border: "none", cursor: "pointer", color: "#6b7280",
+            fontSize: 14, fontWeight: 600, padding: "0 0 16px 0", display: "flex", alignItems: "center", gap: 6,
+          }}>← Terug</button>
+        )}
+        <div style={{ fontSize: 28, fontWeight: 900, color: "#15803d", marginBottom: 4 }}>
+          {isEditing ? "Profiel bewerken ✏️" : "Maak je profiel ⚽"}
+        </div>
         <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 24, marginTop: 0 }}>Vertel ons wie je bent, dan passen we de training op jou aan.</p>
 
         {/* Avatar */}
@@ -404,6 +412,9 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
   const [activeTab, setActiveTab] = useState("training");
   const [scores, setScores] = useState({});
   const [savedScores, setSavedScores] = useState({});
+  const [wedstrijden, setWedstrijden] = useState([]);
+  const [newWedstrijd, setNewWedstrijd] = useState({ datum: "", tegenstander: "", doelpunten_voor: "", doelpunten_tegen: "", notitie: "" });
+  const [wedstrijdSaved, setWedstrijdSaved] = useState(false);
   const [chat, setChat] = useState([{
     role: "ronaldo",
     text: `Hoi ${profile.name || "kampioen"}! Klaar voor vandaag? Als ${profile.position || "voetballer"} gaan we hard werken! 💪`,
@@ -439,6 +450,8 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
       setScores(today);
       setWeekScores(week);
     }
+    const { data: w } = await supabase.from("wedstrijden").select("*").eq("user_id", userId).execute();
+    if (w) setWedstrijden(w.sort((a, b) => b.datum.localeCompare(a.datum)));
   }
 
   async function saveScores() {
@@ -449,6 +462,23 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
     setSavedScores({ ...scores });
     setScoreSaved(true);
     setTimeout(() => setScoreSaved(false), 2500);
+  }
+
+  async function saveWedstrijd() {
+    if (!newWedstrijd.tegenstander || !newWedstrijd.datum) return;
+    const entry = {
+      user_id: userId,
+      datum: newWedstrijd.datum,
+      tegenstander: newWedstrijd.tegenstander,
+      doelpunten_voor: parseInt(newWedstrijd.doelpunten_voor) || 0,
+      doelpunten_tegen: parseInt(newWedstrijd.doelpunten_tegen) || 0,
+      notitie: newWedstrijd.notitie,
+    };
+    await supabase.from("wedstrijden").insert(entry);
+    setNewWedstrijd({ datum: "", tegenstander: "", doelpunten_voor: "", doelpunten_tegen: "", notitie: "" });
+    setWedstrijdSaved(true);
+    setTimeout(() => setWedstrijdSaved(false), 2500);
+    loadScores();
   }
 
   function sendMessage() {
@@ -467,6 +497,7 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
   const tabs = [
     { key: "training", label: "Training", emoji: "⚽" },
     { key: "scores", label: "Scores", emoji: "🏆" },
+    { key: "wedstrijden", label: "Wedstrijden", emoji: "🆚" },
     { key: "ronaldo", label: "Ronaldo", emoji: "💬" },
     { key: "profiel", label: "Profiel", emoji: "👤" },
   ];
@@ -664,6 +695,116 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
                     );
                   })}
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── WEDSTRIJDEN TAB ── */}
+        {activeTab === "wedstrijden" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>🆚 Wedstrijden</h2>
+
+            {/* Stats */}
+            {wedstrijden.length > 0 && (() => {
+              const gewonnen = wedstrijden.filter(w => w.doelpunten_voor > w.doelpunten_tegen).length;
+              const gelijk = wedstrijden.filter(w => w.doelpunten_voor === w.doelpunten_tegen).length;
+              const verloren = wedstrijden.filter(w => w.doelpunten_voor < w.doelpunten_tegen).length;
+              const doelpunten = wedstrijden.reduce((s, w) => s + w.doelpunten_voor, 0);
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 10 }}>
+                  {[
+                    { label: "Gewonnen", value: gewonnen, color: "#15803d", bg: "#f0fdf4" },
+                    { label: "Gelijk", value: gelijk, color: "#d97706", bg: "#fffbeb" },
+                    { label: "Verloren", value: verloren, color: "#dc2626", bg: "#fef2f2" },
+                    { label: "Doelpunten", value: doelpunten, color: "#1d4ed8", bg: "#eff6ff" },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: s.bg, borderRadius: 12, padding: "14px 12px", textAlign: "center" }}>
+                      <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.value}</div>
+                      <div style={{ fontSize: 11, color: "#6b7280" }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Nieuwe wedstrijd invoeren */}
+            <div style={{ background: "white", borderRadius: 20, border: "1.5px solid #d1fae5", padding: 24 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>➕ Wedstrijd toevoegen</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>📅 Datum</label>
+                  <input type="date" value={newWedstrijd.datum}
+                    onChange={e => setNewWedstrijd(p => ({ ...p, datum: e.target.value }))}
+                    style={{ ...inputStyle, fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>🆚 Tegenstander</label>
+                  <input value={newWedstrijd.tegenstander} placeholder="Naam tegenstander"
+                    onChange={e => setNewWedstrijd(p => ({ ...p, tegenstander: e.target.value }))}
+                    style={{ ...inputStyle, fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>⚽ Jouw doelpunten</label>
+                  <input type="number" value={newWedstrijd.doelpunten_voor} placeholder="0"
+                    onChange={e => setNewWedstrijd(p => ({ ...p, doelpunten_voor: e.target.value }))}
+                    style={{ ...inputStyle, fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>🥅 Tegenstander doelpunten</label>
+                  <input type="number" value={newWedstrijd.doelpunten_tegen} placeholder="0"
+                    onChange={e => setNewWedstrijd(p => ({ ...p, doelpunten_tegen: e.target.value }))}
+                    style={{ ...inputStyle, fontSize: 14 }} />
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 5 }}>📝 Notitie (optioneel)</label>
+                <input value={newWedstrijd.notitie} placeholder="Bijv: 2 assists gemaakt, goed gespeeld"
+                  onChange={e => setNewWedstrijd(p => ({ ...p, notitie: e.target.value }))}
+                  style={{ ...inputStyle, fontSize: 14 }} />
+              </div>
+              <button onClick={saveWedstrijd} style={{
+                marginTop: 16,
+                background: wedstrijdSaved ? "#15803d" : "linear-gradient(135deg, #16a34a, #15803d)",
+                color: "white", border: "none", borderRadius: 10, padding: "11px 24px",
+                fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}>
+                {wedstrijdSaved ? "✓ Opgeslagen!" : "Wedstrijd opslaan"}
+              </button>
+            </div>
+
+            {/* Wedstrijd geschiedenis */}
+            {wedstrijden.length > 0 && (
+              <div style={{ background: "white", borderRadius: 20, border: "1.5px solid #d1fae5", padding: 24 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>📋 Gespeelde wedstrijden</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {wedstrijden.map((w, i) => {
+                    const gewonnen = w.doelpunten_voor > w.doelpunten_tegen;
+                    const gelijk = w.doelpunten_voor === w.doelpunten_tegen;
+                    const kleur = gewonnen ? "#15803d" : gelijk ? "#d97706" : "#dc2626";
+                    const bg = gewonnen ? "#f0fdf4" : gelijk ? "#fffbeb" : "#fef2f2";
+                    const label = gewonnen ? "W" : gelijk ? "G" : "V";
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 12, border: "1px solid #f0fdf4", background: "#fafafa" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: bg, color: kleur, fontWeight: 900, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{label}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>vs {w.tegenstander}</div>
+                          {w.notitie && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{w.notitie}</div>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 900, fontSize: 18, color: kleur }}>{w.doelpunten_voor} - {w.doelpunten_tegen}</div>
+                          <div style={{ fontSize: 11, color: "#9ca3af" }}>{w.datum}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {wedstrijden.length === 0 && (
+              <div style={{ textAlign: "center", color: "#9ca3af", padding: "40px 0", fontSize: 14 }}>
+                Nog geen wedstrijden. Voeg je eerste wedstrijd toe! ⚽
               </div>
             )}
           </div>
@@ -867,6 +1008,8 @@ export default function App() {
       <ProfileSetup
         userId={session.user?.id || session.id}
         onDone={(p) => { setProfile(p); setEditingProfile(false); }}
+        onCancel={() => setEditingProfile(false)}
+        isEditing={editingProfile}
       />
     );
   }
