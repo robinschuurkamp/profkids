@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─── SUPABASE CONFIG ────────────────────────────────────────────────
 // Replace these with your actual Supabase project credentials
 const SUPABASE_URL = "https://bjwdgjgsmvsxgxmsdxvb.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_q3SUc-3BFR9lEfTA40k8Ww_x3QEhGtr";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqd2RnamdzbXZzeGd4bXNkeHZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMTM3ODksImV4cCI6MjA5Mzg4OTc4OX0.zH6Q6yntSgIrDRxa-a6Nf_4UDD1Bug2AqWzK28sFxK4";
 
 // Minimal Supabase client (no npm needed for artifact)
 const supabase = (() => {
