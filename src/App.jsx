@@ -23,7 +23,13 @@ const supabase = (() => {
     signUp: async ({ email, password }) => {
       const r = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
         method: "POST", headers,
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          options: {
+            emailRedirectTo: "https://profkids.robinschuurkamp.workers.dev",
+          },
+        }),
       });
       return r.json();
     },
@@ -238,7 +244,11 @@ function AuthPage({ onAuth }) {
     } else {
       const { data, error: e } = await supabase.auth.signUp({ email, password });
       if (e) setError(e.message || "Registratie mislukt");
-      else setSuccess("Check je email om je account te bevestigen!");
+      else if (data?.access_token) {
+        onAuth(data);
+      } else {
+        setSuccess("Account aangemaakt! Check je email en klik op de bevestigingslink, kom dan terug om in te loggen.");
+      }
     }
     setLoading(false);
   }
