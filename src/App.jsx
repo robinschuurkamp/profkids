@@ -1,11 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// ─── SUPABASE CONFIG ─────────────────────────────────────────────────
 const SUPABASE_URL = "https://bjwdgjgsmvsxgxmsdxvb.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqd2RnamdzbXZzeGd4bXNkeHZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMTM3ODksImV4cCI6MjA5Mzg4OTc4OX0.zH6Q6yntSgIrDRxa-a6Nf_4UDD1Bug2AqWzK28sFxK4";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    flowType: "implicit",
+  },
+  global: {
+    headers: {
+      "X-Client-Info": "profkids-web",
+    },
+  },
+});
 
 // ─── TRAINING DATA ──────────────────────────────────────────────────
 const ALL_EXERCISES = {
@@ -110,22 +121,14 @@ function AuthPage({ onAuth }) {
     try {
       if (mode === "login") {
         const { data, error: e } = await supabase.auth.signInWithPassword({ email, password });
-        if (e) {
-          setError("Inloggen mislukt: " + e.message);
-        } else if (data?.session) {
-          onAuth(data);
-        } else {
-          setError("Geen sessie ontvangen. Bevestig je email of probeer opnieuw.");
-        }
+        if (e) setError("Inloggen mislukt: " + e.message);
+        else if (data?.session) onAuth(data.session);
+        else setError("Geen sessie ontvangen, probeer opnieuw.");
       } else {
         const { data, error: e } = await supabase.auth.signUp({ email, password });
-        if (e) {
-          setError("Registratie mislukt: " + (e.message || JSON.stringify(e)));
-        } else if (data?.session) {
-          onAuth(data);
-        } else {
-          setSuccess("Account aangemaakt! Check je email voor de bevestigingslink en log daarna in.");
-        }
+        if (e) setError("Registratie mislukt: " + e.message);
+        else if (data?.session) onAuth(data.session);
+        else setSuccess("Account aangemaakt! Check je email en log daarna in.");
       }
     } catch(err) {
       setError("Fout: " + err.message);
@@ -318,7 +321,7 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
   }, [chat, isThinking]);
 
   async function loadScores() {
-    const { data } = await supabase.from("scores").select("*").eq("user_id", userId);
+    const { data } = await supabase.from("scores").select("*").eq("user_id", userId).execute();
     if (data) {
       const today = {};
       const week = [];
@@ -330,7 +333,7 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
       setScores(today);
       setWeekScores(week);
     }
-    const { data: w } = await supabase.from("wedstrijden").select("*").eq("user_id", userId);
+    const { data: w } = await supabase.from("wedstrijden").select("*").eq("user_id", userId).execute();
     if (w) setWedstrijden(w.sort((a, b) => b.datum.localeCompare(a.datum)));
   }
 
@@ -857,17 +860,26 @@ export default function App() {
       setLoading(false);
     }
     init();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        setSession(session);
+        const userId = session.user?.id;
+        if (userId) {
+          const { data: p } = await supabase.from("profiles").select("*").eq("id", userId).single();
+          if (p?.name) setProfile(p);
+        }
+      } else {
+        setSession(null);
+        setProfile(null);
+      }
+      setLoading(false);
+    });
+    return () => listener?.subscription?.unsubscribe();
   }, []);
 
-  function handleAuth(data) {
-    // Official supabase-js returns session object directly
-    if (data?.session) {
-      setSession(data.session);
-    } else if (data?.access_token) {
-      setSession(data);
-    } else if (data?.user) {
-      setSession(data);
-    }
+  function handleAuth(session) {
+    if (session) setSession(session);
   }
 
   async function handleLogout() {
