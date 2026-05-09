@@ -1,147 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// ─── SUPABASE CONFIG ────────────────────────────────────────────────
-// Replace these with your actual Supabase project credentials
+// ─── SUPABASE CONFIG ─────────────────────────────────────────────────
 const SUPABASE_URL = "https://bjwdgjgsmvsxgxmsdxvb.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqd2RnamdzbXZzeGd4bXNkeHZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMTM3ODksImV4cCI6MjA5Mzg4OTc4OX0.zH6Q6yntSgIrDRxa-a6Nf_4UDD1Bug2AqWzK28sFxK4";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Minimal Supabase client (no npm needed for artifact)
-const supabase = (() => {
-  const headers = {
-    "Content-Type": "application/json",
-    apikey: SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  };
-  let _session = null;
-
-  const auth = {
-    getSession: async () => {
-      const s = localStorage.getItem("profkids_session");
-      if (s) _session = JSON.parse(s);
-      return { data: { session: _session } };
-    },
-    signUp: async ({ email, password }) => {
-      const r = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-        method: "POST", headers,
-        body: JSON.stringify({
-          email,
-          password,
-          options: {
-            emailRedirectTo: "https://profkids.robinschuurkamp.workers.dev",
-          },
-        }),
-      });
-      return r.json();
-    },
-    signInWithPassword: async ({ email, password }) => {
-      try {
-        const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-          method: "POST", headers,
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await r.json();
-        if (data.access_token) {
-          _session = data;
-          localStorage.setItem("profkids_session", JSON.stringify(data));
-          return { data, error: null };
-        }
-        const msg = data.error_description || data.msg || data.message || JSON.stringify(data);
-        return { data: null, error: { message: msg } };
-      } catch(e) {
-        return { data: null, error: { message: e.message } };
-      }
-    },
-    signOut: async () => {
-      localStorage.removeItem("profkids_session");
-      _session = null;
-    },
-  };
-
-  const from = (table) => ({
-    select: (cols = "*") => ({
-      eq: (col, val) => ({
-        single: async () => {
-          const s = localStorage.getItem("profkids_session");
-          const tok = s ? JSON.parse(s).access_token : SUPABASE_ANON_KEY;
-          const r = await fetch(
-            `${SUPABASE_URL}/rest/v1/${table}?select=${cols}&${col}=eq.${val}&limit=1`,
-            { headers: { ...headers, Authorization: `Bearer ${tok}` } }
-          );
-          const arr = await r.json();
-          return { data: arr[0] || null, error: null };
-        },
-        execute: async () => {
-          const s = localStorage.getItem("profkids_session");
-          const tok = s ? JSON.parse(s).access_token : SUPABASE_ANON_KEY;
-          const r = await fetch(
-            `${SUPABASE_URL}/rest/v1/${table}?select=${cols}&${col}=eq.${val}`,
-            { headers: { ...headers, Authorization: `Bearer ${tok}` } }
-          );
-          const data = await r.json();
-          return { data, error: null };
-        },
-      }),
-    }),
-    upsert: async (obj, opts = {}) => {
-      const s = localStorage.getItem("profkids_session");
-      const tok = s ? JSON.parse(s).access_token : SUPABASE_ANON_KEY;
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-        method: "POST",
-        headers: {
-          ...headers,
-          Authorization: `Bearer ${tok}`,
-          Prefer: "resolution=merge-duplicates,return=representation",
-        },
-        body: JSON.stringify(obj),
-      });
-      const data = await r.json();
-      return { data, error: null };
-    },
-    insert: async (obj) => {
-      const s = localStorage.getItem("profkids_session");
-      const tok = s ? JSON.parse(s).access_token : SUPABASE_ANON_KEY;
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-        method: "POST",
-        headers: { ...headers, Authorization: `Bearer ${tok}`, Prefer: "return=representation" },
-        body: JSON.stringify(obj),
-      });
-      const data = await r.json();
-      return { data, error: null };
-    },
-  });
-
-  return { auth, from };
-})();
-
-// ─── SUPABASE SQL (run in Supabase SQL editor once) ─────────────────
-/*
-create table if not exists profiles (
-  id uuid primary key references auth.users(id),
-  name text,
-  position text,
-  age int,
-  club text,
-  bio text,
-  avatar_url text,
-  created_at timestamptz default now()
-);
-
-create table if not exists scores (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id),
-  date date default current_date,
-  category text,
-  score int,
-  created_at timestamptz default now(),
-  unique(user_id, date, category)
-);
-
-alter table profiles enable row level security;
-alter table scores enable row level security;
-
-create policy "own profile" on profiles for all using (auth.uid() = id);
-create policy "own scores" on scores for all using (auth.uid() = user_id);
-*/
 
 // ─── TRAINING DATA ──────────────────────────────────────────────────
 const ALL_EXERCISES = {
@@ -248,16 +112,16 @@ function AuthPage({ onAuth }) {
         const { data, error: e } = await supabase.auth.signInWithPassword({ email, password });
         if (e) {
           setError("Inloggen mislukt: " + e.message);
-        } else if (data?.access_token) {
+        } else if (data?.session) {
           onAuth(data);
         } else {
-          setError("Geen toegang ontvangen. Controleer je email bevestiging of probeer opnieuw.");
+          setError("Geen sessie ontvangen. Bevestig je email of probeer opnieuw.");
         }
       } else {
         const { data, error: e } = await supabase.auth.signUp({ email, password });
         if (e) {
           setError("Registratie mislukt: " + (e.message || JSON.stringify(e)));
-        } else if (data?.access_token) {
+        } else if (data?.session) {
           onAuth(data);
         } else {
           setSuccess("Account aangemaakt! Check je email voor de bevestigingslink en log daarna in.");
@@ -454,7 +318,7 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
   }, [chat, isThinking]);
 
   async function loadScores() {
-    const { data } = await supabase.from("scores").select("*").eq("user_id", userId).execute();
+    const { data } = await supabase.from("scores").select("*").eq("user_id", userId);
     if (data) {
       const today = {};
       const week = [];
@@ -466,7 +330,7 @@ function Dashboard({ profile, userId, onEditProfile, onLogout }) {
       setScores(today);
       setWeekScores(week);
     }
-    const { data: w } = await supabase.from("wedstrijden").select("*").eq("user_id", userId).execute();
+    const { data: w } = await supabase.from("wedstrijden").select("*").eq("user_id", userId);
     if (w) setWedstrijden(w.sort((a, b) => b.datum.localeCompare(a.datum)));
   }
 
@@ -996,7 +860,12 @@ export default function App() {
   }, []);
 
   function handleAuth(data) {
-    if (data.access_token) {
+    // Official supabase-js returns session object directly
+    if (data?.session) {
+      setSession(data.session);
+    } else if (data?.access_token) {
+      setSession(data);
+    } else if (data?.user) {
       setSession(data);
     }
   }
