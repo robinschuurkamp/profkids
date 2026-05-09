@@ -115,6 +115,20 @@ function AuthPage({ onAuth }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+
+  async function handleForgot() {
+    if (!email) { setError("Vul eerst je emailadres in."); return; }
+    setLoading(true); setError("");
+    const { error: e } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://profkids.nl",
+    });
+    if (e) setError("Fout: " + e.message);
+    else setSuccess("Reset link verstuurd! Check je email.");
+    setLoading(false);
+    setForgotMode(false);
+  }
 
   async function handle() {
     setError(""); setLoading(true);
@@ -169,8 +183,16 @@ function AuthPage({ onAuth }) {
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Jouw naam" style={inputStyle} />
           )}
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="E-mailadres" type="email" style={inputStyle} />
-          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Wachtwoord" type="password" style={inputStyle}
-            onKeyDown={e => e.key === "Enter" && handle()} />
+          <div style={{ position: "relative" }}>
+            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Wachtwoord"
+              type={showPassword ? "text" : "password"}
+              style={{ ...inputStyle, paddingRight: 44 }}
+              onKeyDown={e => e.key === "Enter" && handle()} />
+            <button onClick={() => setShowPassword(p => !p)} style={{
+              position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af",
+            }}>{showPassword ? "🙈" : "👁️"}</button>
+          </div>
           <button onClick={handle} disabled={loading} style={{
             background: loading ? "#86efac" : "linear-gradient(135deg, #16a34a, #15803d)",
             color: "white", border: "none", borderRadius: 10, padding: "12px 0",
@@ -178,6 +200,14 @@ function AuthPage({ onAuth }) {
           }}>
             {loading ? "Even wachten..." : mode === "login" ? "Inloggen" : "Account aanmaken"}
           </button>
+          {mode === "login" && (
+            <button onClick={forgotMode ? handleForgot : () => setForgotMode(true)} style={{
+              background: "none", border: "none", color: "#16a34a", fontSize: 13,
+              fontWeight: 600, cursor: "pointer", padding: "4px 0", textAlign: "center",
+            }}>
+              {forgotMode ? "📧 Stuur reset link naar mijn email" : "Wachtwoord vergeten?"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -847,35 +877,54 @@ export default function App() {
   const [editingProfile, setEditingProfile] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+
+    async function loadProfile(userId) {
+      try {
+        const { data: p } = await supabase.from("profiles").select("*").eq("id", userId).single();
+        if (mounted && p?.name) setProfile(p);
+      } catch(e) {}
+    }
+
     async function init() {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        setSession(data.session);
-        const userId = data.session.user?.id;
-        if (userId) {
-          const { data: p } = await supabase.from("profiles").select("*").eq("id", userId).single();
-          if (p?.name) setProfile(p);
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (mounted) {
+          if (data.session) {
+            setSession(data.session);
+            await loadProfile(data.session.user.id);
+          }
+          setLoading(false);
         }
+      } catch(e) {
+        if (mounted) setLoading(false);
       }
-      setLoading(false);
     }
     init();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
+      if (!mounted) return;
+      if (event === "SIGNED_IN" && session) {
         setSession(session);
-        const userId = session.user?.id;
-        if (userId) {
-          const { data: p } = await supabase.from("profiles").select("*").eq("id", userId).single();
-          if (p?.name) setProfile(p);
-        }
-      } else {
+        await loadProfile(session.user.id);
+        setLoading(false);
+      } else if (event === "SIGNED_OUT") {
         setSession(null);
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => listener?.subscription?.unsubscribe();
+
+    // Safety timeout - never stay on loading screen
+    const timeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 3000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      listener?.subscription?.unsubscribe();
+    };
   }, []);
 
   function handleAuth(session) {
