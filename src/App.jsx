@@ -34,16 +34,22 @@ const supabase = (() => {
       return r.json();
     },
     signInWithPassword: async ({ email, password }) => {
-      const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-        method: "POST", headers,
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await r.json();
-      if (data.access_token) {
-        _session = data;
-        localStorage.setItem("profkids_session", JSON.stringify(data));
+      try {
+        const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+          method: "POST", headers,
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json();
+        if (data.access_token) {
+          _session = data;
+          localStorage.setItem("profkids_session", JSON.stringify(data));
+          return { data, error: null };
+        }
+        const msg = data.error_description || data.msg || data.message || JSON.stringify(data);
+        return { data: null, error: { message: msg } };
+      } catch(e) {
+        return { data: null, error: { message: e.message } };
       }
-      return { data, error: data.error_description ? { message: data.error_description } : null };
     },
     signOut: async () => {
       localStorage.removeItem("profkids_session");
@@ -237,18 +243,28 @@ function AuthPage({ onAuth }) {
 
   async function handle() {
     setError(""); setLoading(true);
-    if (mode === "login") {
-      const { data, error: e } = await supabase.auth.signInWithPassword({ email, password });
-      if (e) setError(e.message);
-      else onAuth(data);
-    } else {
-      const { data, error: e } = await supabase.auth.signUp({ email, password });
-      if (e) setError(e.message || "Registratie mislukt");
-      else if (data?.access_token) {
-        onAuth(data);
+    try {
+      if (mode === "login") {
+        const { data, error: e } = await supabase.auth.signInWithPassword({ email, password });
+        if (e) {
+          setError("Inloggen mislukt: " + e.message);
+        } else if (data?.access_token) {
+          onAuth(data);
+        } else {
+          setError("Geen toegang ontvangen. Controleer je email bevestiging of probeer opnieuw.");
+        }
       } else {
-        setSuccess("Account aangemaakt! Check je email en klik op de bevestigingslink, kom dan terug om in te loggen.");
+        const { data, error: e } = await supabase.auth.signUp({ email, password });
+        if (e) {
+          setError("Registratie mislukt: " + (e.message || JSON.stringify(e)));
+        } else if (data?.access_token) {
+          onAuth(data);
+        } else {
+          setSuccess("Account aangemaakt! Check je email voor de bevestigingslink en log daarna in.");
+        }
       }
+    } catch(err) {
+      setError("Fout: " + err.message);
     }
     setLoading(false);
   }
